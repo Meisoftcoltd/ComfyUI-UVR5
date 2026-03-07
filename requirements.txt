@@ -1,0 +1,4 @@
+audio-separator[gpu]
+moviepy
+torchaudio
+numpy
