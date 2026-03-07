@@ -46,7 +46,7 @@ Dado que utilizamos `moviepy` para la manipulación y extracción de video, aseg
 3. Clona este repositorio:
    ```bash
    git clone <URL_DEL_REPOSITORIO>
-   cd UVR5_Custom
+   cd ComfyUI-UVR5
    ```
 4. Instala las dependencias requeridas en el entorno virtual de Python que usa tu ComfyUI. Si usas un entorno virtual estándar o Conda:
    ```bash
