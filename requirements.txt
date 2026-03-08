@@ -1,4 +1,4 @@
 audio-separator[gpu]
 moviepy
-torchaudio
+soundfile
 numpy
