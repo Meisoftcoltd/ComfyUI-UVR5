@@ -3,7 +3,10 @@ import tempfile
 import torch
 import numpy as np
 import torchaudio
-from moviepy.editor import AudioFileClip
+try:
+    from moviepy.editor import AudioFileClip
+except ImportError:
+    from moviepy import AudioFileClip
 from audio_separator.separator import Separator
 
 # Supported formats
