@@ -2,7 +2,7 @@ import os
 import tempfile
 import torch
 import numpy as np
-import torchaudio
+import soundfile as sf
 try:
     from moviepy.editor import AudioFileClip
 except ImportError:
@@ -40,8 +40,27 @@ def load_audio_or_video(file_path):
         waveform = torch.from_numpy(audio_array).to(torch.float32)
 
     elif ext in AUDIO_FORMATS:
-        # Load directly with torchaudio
-        waveform, sample_rate = torchaudio.load(file_path)
+        # Load directly with soundfile
+        try:
+            audio_array, sample_rate = sf.read(file_path)
+            if audio_array.ndim == 1:
+                # Mono to [channels, frames]
+                audio_array = audio_array.reshape(1, -1)
+            else:
+                # Stereo/multi-channel to [channels, frames]
+                audio_array = audio_array.T
+            waveform = torch.from_numpy(audio_array).to(torch.float32)
+        except Exception as e:
+            # Fallback a moviepy si soundfile falla (ej. algunos mp3/m4a)
+            clip = AudioFileClip(file_path)
+            sample_rate = int(clip.fps)
+            audio_array = clip.to_soundarray()
+            clip.close()
+            if audio_array.ndim == 1:
+                audio_array = audio_array.reshape(1, -1)
+            else:
+                audio_array = audio_array.T
+            waveform = torch.from_numpy(audio_array).to(torch.float32)
     else:
         raise ValueError(f"Unsupported file format: {ext}")
 
@@ -112,7 +131,12 @@ class UVRExtractorNode:
             input_path = os.path.join(tmpdir, "input_audio.wav")
             waveform = audio["waveform"].squeeze(0)
             sample_rate = audio["sample_rate"]
-            torchaudio.save(input_path, waveform, sample_rate)
+
+            # soundfile espera [frames, channels]
+            audio_np = waveform.numpy()
+            if audio_np.ndim == 2:
+                audio_np = audio_np.T
+            sf.write(input_path, audio_np, sample_rate)
 
             # Inicializar separador UVR5
             separator = Separator(output_dir=tmpdir)
@@ -137,11 +161,22 @@ class UVRExtractorNode:
             if not inst_path and len(output_files) > 1:
                 inst_path = os.path.join(tmpdir, output_files[1])
 
-            # Carga de resultados
-            v_wave, v_sr = torchaudio.load(vocal_path)
+            # Carga de resultados con soundfile
+            v_array, v_sr = sf.read(vocal_path)
+            if v_array.ndim == 1:
+                v_array = v_array.reshape(1, -1)
+            else:
+                v_array = v_array.T
+            v_wave = torch.from_numpy(v_array).to(torch.float32)
+
             # Si no hay instrumental (raro), devolvemos silencio para no romper el flujo
             if inst_path:
-                i_wave, i_sr = torchaudio.load(inst_path)
+                i_array, i_sr = sf.read(inst_path)
+                if i_array.ndim == 1:
+                    i_array = i_array.reshape(1, -1)
+                else:
+                    i_array = i_array.T
+                i_wave = torch.from_numpy(i_array).to(torch.float32)
             else:
                 i_wave, i_sr = torch.zeros_like(v_wave), v_sr
 

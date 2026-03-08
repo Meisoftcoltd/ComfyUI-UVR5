@@ -21,7 +21,7 @@ Para que el extractor funcione a máxima velocidad en tu GPU, se requiere tener 
 Las dependencias clave están en el archivo `requirements.txt`:
 - `audio-separator[gpu]`
 - `moviepy`
-- `torchaudio`
+- `soundfile`
 - `numpy`
 
 ### Instalación de ffmpeg (Requerido para MoviePy)
