@@ -94,66 +94,58 @@ class UVRExtractorNode:
         return {
             "required": {
                 "audio": ("AUDIO",),
-            },
-            "optional": {
-                "reference_audio": ("AUDIO",), # Optional reference audio input for phase cancellation or noise profile
                 "model_name": (["Kim_Vocal_2.onnx", "UVR-MDX-NET-Voc-FT.onnx"], {"default": "Kim_Vocal_2.onnx"}),
             }
         }
 
-    RETURN_TYPES = ("AUDIO",)
+    # Definimos dos salidas claras para el workflow
+    RETURN_TYPES = ("AUDIO", "AUDIO")
+    RETURN_NAMES = ("VOCALS", "INSTRUMENTAL")
     FUNCTION = "separate"
     CATEGORY = "AudioExtract"
 
-    def separate(self, audio, reference_audio=None, model_name="Kim_Vocal_2.onnx"):
-        # The separator expects a file path. We use a temporary directory to handle concurrent executions safely.
+    def separate(self, audio, model_name="Kim_Vocal_2.onnx"):
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = os.path.join(tmpdir, "input_audio.wav")
-
-            # ComfyUI audio format is typically: dict with "waveform" and "sample_rate"
-            waveform = audio["waveform"].squeeze(0) # [channels, frames]
+            waveform = audio["waveform"].squeeze(0)
             sample_rate = audio["sample_rate"]
-
-            # Save the waveform to a temporary wav file
             torchaudio.save(input_path, waveform, sample_rate)
 
-            # Initialize separator
+            # Inicializar separador UVR5
             separator = Separator(output_dir=tmpdir)
             separator.load_model(model_name)
-
-            # Note: The reference_audio is kept here as a placeholder for potential Ensemble Mode
-            # or advanced phase cancellation features as requested. Currently audio-separator
-            # only takes a single input path in its basic `separate` method.
-            if reference_audio is not None:
-                # Potential logic to utilize reference_audio as a noise profile or bias could go here
-                # Example: reference_path = os.path.join(tmpdir, "reference_audio.wav")
-                # torchaudio.save(reference_path, reference_audio["waveform"].squeeze(0), reference_audio["sample_rate"])
-                pass
-
-            # Perform separation
             output_files = separator.separate(input_path)
 
-            # Dynamically search for the Vocals stem
-            vocal_file = None
-            for file in output_files:
-                # audio-separator generally appends the stem name, e.g., (Vocals).wav
-                if "Vocal" in file or "vocal" in file:
-                    vocal_file = file
-                    break
+            vocal_path = None
+            inst_path = None
 
-            if vocal_file is None:
-                # Fallback to the first output if we can't identify by name
-                vocal_file = output_files[0] if output_files else None
+            # Lógica de identificación robusta
+            if len(output_files) >= 2:
+                for file in output_files:
+                    full_path = os.path.join(tmpdir, file)
+                    if "vocal" in file.lower():
+                        vocal_path = full_path
+                    else:
+                        inst_path = full_path # El que no es vocal, es instrumental
 
-            if not vocal_file:
-                raise RuntimeError("UVR5 separation failed, no output files generated.")
+            # Fallback en caso de nombres inesperados o un solo archivo
+            if not vocal_path:
+                vocal_path = os.path.join(tmpdir, output_files[0])
+            if not inst_path and len(output_files) > 1:
+                inst_path = os.path.join(tmpdir, output_files[1])
 
-            vocal_path = os.path.join(tmpdir, vocal_file)
+            # Carga de resultados
+            v_wave, v_sr = torchaudio.load(vocal_path)
+            # Si no hay instrumental (raro), devolvemos silencio para no romper el flujo
+            if inst_path:
+                i_wave, i_sr = torchaudio.load(inst_path)
+            else:
+                i_wave, i_sr = torch.zeros_like(v_wave), v_sr
 
-            # Load the result (Vocal)
-            clean_waveform, sr = torchaudio.load(vocal_path)
-
-            return ({"waveform": clean_waveform.unsqueeze(0), "sample_rate": sr},)
+            return (
+                {"waveform": v_wave.unsqueeze(0), "sample_rate": v_sr},
+                {"waveform": i_wave.unsqueeze(0), "sample_rate": i_sr}
+            )
 
 
 NODE_CLASS_MAPPINGS = {
@@ -165,5 +157,5 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadSimpleAudio": "Load Simple Audio (Audio/Video)",
     "LoadFolderAudio": "Load Folder Audio (Batch)",
-    "UVRExtractor": "UVR5 Extractor (Ultimate Vocal Remover)"
+    "UVRExtractor": "Extractor UVR5 (Vocal + Instrumental)"
 }
